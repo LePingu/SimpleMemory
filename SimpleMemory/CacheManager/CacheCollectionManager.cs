@@ -58,6 +58,18 @@ namespace SimpleMemory.CacheManager
             recordEntries.Clear();
         }
 
+        public void FlushOld(LocalDateTime oldLimit)
+        {
+            var oldObjects = this.keyTimestampDict.Where(ts => ts.Value < oldLimit);
+            foreach (var oldObject in oldObjects)
+            {
+                T oldValue;
+                LocalDateTime oldTimeStamp;
+                dictionaryCache.TryRemove(oldObject.Key, out oldValue);
+                keyTimestampDict.TryRemove(oldObject.Key, out oldTimeStamp);
+            }
+        }
+
         public int GetSizeDictionary(){
             return this.dictionaryCache.Count;
         }
