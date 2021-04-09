@@ -21,20 +21,26 @@ namespace SimpleMemory.CacheManager
 
         // We need the expression to get access to the reflection info of the incoming method
         // This way we can create a unique key for any method coming in, coupled with it's parameters
-        public T GetOrCreate<T>(Expression<Func<T>> createItem)
+        public object GetOrCreate<T>(Expression<Func<T>> createItem)
         {
             var methodCallExpression = createItem.Body as MethodCallExpression;
             if (methodCallExpression != null)
             {
                 // Create the key
                 var key = CacheHelper.CreateKey(methodCallExpression);
-                // Compile the lambda expression.  
-                Func<T> compiledExpression = createItem.Compile();
-                // Execute the lambda expression to create thev value.  
-                var result = compiledExpression();
-                cacheCollectionManager.Value.GetOrCreate(key, result);
+
+                var result = cacheCollectionManager.Value.Get(key);
+                if (result is null)
+                {
+                    // Compile the lambda expression.  
+                    Func<T> compiledExpression = createItem.Compile();
+                    // Execute the lambda expression to create thev value.  
+                    var heavyMethodResult = compiledExpression();
+                    result = cacheCollectionManager.Value.Create(key, heavyMethodResult);
+                }
+                return result;
             }
-            return default(T);
+            return null;
         }
 
         public void FlushOld(LocalDateTime oldLimit)

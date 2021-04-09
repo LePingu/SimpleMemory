@@ -22,19 +22,13 @@ namespace SimpleMemory.CacheManager
         // Better implementation would be to monitor size of object with CLR API access
         // This is enough for a PoC
         // Each time a new object is assigned, but max number already present, Pop oldest object. 
-        public T GetOrCreate(U key, T item)
+        public T Create(U key, T item)
         {
             var timeStamp = CreateLocalTimestamp();
-            bool test = false;
-            if (dictionaryCache.Count > 0)
-            {
-                test = dictionaryCache.First().Key.Equals(key);
-            }
             if (dictionaryCache.ContainsKey(key))
             {
                 keyTimestampDict[key] = timeStamp;
                 recordEntries.Add((key, timeStamp));
-                System.Console.WriteLine(this.dictionaryCache.Count);
                 return dictionaryCache[key];
             }
             if (dictionaryCache.Count == maxSize)
@@ -47,8 +41,19 @@ namespace SimpleMemory.CacheManager
             recordEntries.Add((key,timeStamp));
             dictionaryCache.TryAdd(key, item);
             keyTimestampDict.TryAdd(key, timeStamp);
-            System.Console.WriteLine(this.dictionaryCache.Count);
             return item;
+        }
+
+        public T Get(U key)
+        {
+            var timeStamp = CreateLocalTimestamp();
+            if (dictionaryCache.ContainsKey(key))
+            {
+                keyTimestampDict[key] = timeStamp;
+                recordEntries.Add((key, timeStamp));
+                return dictionaryCache[key];
+            }
+            return default(T);
         }
 
         public void Flush()
