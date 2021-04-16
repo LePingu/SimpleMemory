@@ -28,13 +28,6 @@ namespace SimpleMemory.Tests
         }
 
         [Test]
-        public void TimeStampDict_AlwaysStay_100_When_New_Item()
-        {
-            cacheCollectionManager.Create(102, "other");
-            Assert.AreEqual(cacheCollectionManager.GetSizeTimeStampDictionary(), 100);
-        }
-
-        [Test]
         public void RecordedEntries_Contains_Accurate_Number_Entries()
         {
             cacheCollectionManager.Create(102, "other");
@@ -46,8 +39,7 @@ namespace SimpleMemory.Tests
         {
             cacheCollectionManager.Create(102, "other");
             cacheCollectionManager.Create(102, "else");
-            Assert.IsNotNull(cacheCollectionManager.GetTimeDict(102));
-            Assert.That(cacheCollectionManager.GetTimeDict(102), Is.TypeOf(typeof(LocalDateTime)));
+            Assert.IsNotNull(cacheCollectionManager.Get(102));
         }
     }
 }

@@ -3,100 +3,99 @@ using System;
 using System.Linq;
 using NodaTime;
 using System.Collections.Concurrent;
+using SimpleMemory.Models;
+using SimpleMemory.Helper;
 
 namespace SimpleMemory.CacheManager
 {
     public class CacheCollectionManager<U, T>
     {
         // Extra protection, probably not needed
-        ConcurrentDictionary<U, T> dictionaryCache = new ConcurrentDictionary<U, T>();
-
-        // Wanted to use a Queue, but does not trace existing object in the middle.
-        // Queue<T> queuedCache = new Queue<T>();
-        // This seems inefficient in the long term, it would be better to record 
-        // Data in a table just like your bitemporal data blog entry
-        ConcurrentDictionary<U, LocalDateTime> keyTimestampDict = new ConcurrentDictionary<U, LocalDateTime>();
-        List<(U, LocalDateTime)> recordEntries = new List<(U, LocalDateTime)>();
+        ConcurrentDictionary<U, CacheEntry<U, T>> dictionaryCache;
+        Lazy<List<(U, LocalDateTime)>> recordEntries;
+        TimeHelper timeHelper;
+        CacheEntry<U, T> topItem;
+        CacheEntry<U, T> bottomItem;
         private const int maxSize = 100;
+
+        public CacheCollectionManager()
+        {
+            this.dictionaryCache = new ConcurrentDictionary<U, CacheEntry<U, T>>();
+            this.recordEntries = new Lazy<List<(U, LocalDateTime)>>();
+            this.timeHelper = new TimeHelper();
+            topItem = new CacheEntry<U, T>();
+            bottomItem = new CacheEntry<U, T>();
+        }
 
         // Better implementation would be to monitor size of object with CLR API access
         // This is enough for a PoC
         // Each time a new object is assigned, but max number already present, Pop oldest object. 
-        public T Create(U key, T item)
-        {
-            var timeStamp = CreateLocalTimestamp();
-            if (dictionaryCache.ContainsKey(key))
-            {
-                keyTimestampDict[key] = timeStamp;
-                recordEntries.Add((key, timeStamp));
-                return dictionaryCache[key];
-            }
-            if (dictionaryCache.Count == maxSize)
-            {
-                var popKey = keyTimestampDict.OrderBy(x => x.Value).First().Key;
-                dictionaryCache.TryRemove(popKey, out item);
-                LocalDateTime removedStamp;
-                keyTimestampDict.TryRemove(popKey, out removedStamp);
-            }
-            recordEntries.Add((key,timeStamp));
-            dictionaryCache.TryAdd(key, item);
-            keyTimestampDict.TryAdd(key, timeStamp);
-            return item;
-        }
-
         public T Get(U key)
         {
-            var timeStamp = CreateLocalTimestamp();
+            var timeStamp = this.timeHelper.CreateLocalTimestamp();
+            recordEntries.Value.Add((key, timeStamp));
+
             if (dictionaryCache.ContainsKey(key))
             {
-                keyTimestampDict[key] = timeStamp;
-                recordEntries.Add((key, timeStamp));
-                return dictionaryCache[key];
+                dictionaryCache[key].TimeStamp = timeStamp;
+                return (T)dictionaryCache[key].CachedObject;
             }
-            return default(T);
+            return default;
+        }
+
+        public T Create(U key, T item)
+        {
+            var timeStamp = this.timeHelper.CreateLocalTimestamp();
+            recordEntries.Value.Add((key, timeStamp));
+
+            if (dictionaryCache.Count == maxSize)
+            {
+                bottomItem = dictionaryCache[bottomItem.LeftId];
+                var removedItem = dictionaryCache[bottomItem.Id];
+                var truc = dictionaryCache.Remove(bottomItem.RightId, out removedItem);
+                bottomItem.RightId = default(U);
+            }
+            var previousTopId = topItem.Id;
+            topItem.LeftId = key;
+            topItem = new CacheEntry<U, T>
+            {
+                CachedObject = item,
+                Id = key,
+                RightId = previousTopId,
+                TimeStamp = timeStamp
+            };
+            dictionaryCache.TryAdd(key, topItem);
+            if (dictionaryCache.Count == 2)
+            {
+                bottomItem = dictionaryCache[topItem.RightId];
+            }
+            return item;
         }
 
         public void Flush()
         {
             dictionaryCache.Clear();
-            keyTimestampDict.Clear();
-            recordEntries.Clear();
+            recordEntries.Value.Clear();
         }
 
         public void FlushOld(LocalDateTime oldLimit)
         {
-            var oldObjects = this.keyTimestampDict.Where(ts => ts.Value < oldLimit);
+            var oldObjects = this.dictionaryCache.Where(ts => ts.Value.TimeStamp < oldLimit);
             foreach (var oldObject in oldObjects)
             {
-                T oldValue;
-                LocalDateTime oldTimeStamp;
+                CacheEntry<U, T> oldValue;
                 dictionaryCache.TryRemove(oldObject.Key, out oldValue);
-                keyTimestampDict.TryRemove(oldObject.Key, out oldTimeStamp);
             }
         }
 
-        public int GetSizeDictionary(){
+        public int GetSizeDictionary()
+        {
             return this.dictionaryCache.Count;
         }
 
-        public int GetSizeTimeStampDictionary(){
-            return this.keyTimestampDict.Count;
-        }
-
-        public int GetRecordedEntries(){
-            return this.recordEntries.Count;
-        }
-
-        public LocalDateTime GetTimeDict(U key){
-            return this.keyTimestampDict[key];
-        }
-
-        private LocalDateTime CreateLocalTimestamp()
+        public int GetRecordedEntries()
         {
-            Instant now = SystemClock.Instance.GetCurrentInstant();
-            DateTimeZone tz = DateTimeZoneProviders.Tzdb["Europe/London"];
-            LocalDateTime timeStamp = now.InZone(tz).LocalDateTime;
-            return timeStamp;
+            return this.recordEntries.Value.Count;
         }
     }
 }
